@@ -1,3 +1,7 @@
+<div style="text-align:right; font-size: 14px; font-family: sans-serif">
+  <a target="_BLANK" href="https://github.com/walterra/observable-framework-data-loader-elasticsearch" rel="noopener noreferrer">View source</a>
+</div>
+
 # Elasticsearch data loader
 
 Here’s a TypeScript data loader that queries an Elasticsearch cluster.
