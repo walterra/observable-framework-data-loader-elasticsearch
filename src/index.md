@@ -49,18 +49,15 @@ const resp = await esClient.search<unknown, AggsResponseFormat>({
   },
 });
 
-if (!resp.aggregations) {
-  throw new Error("aggregations not defined");
-}
-
 process.stdout.write(
   csvFormat(
     // This transforms the nested response from Elasticsearch into a flat array.
-    resp.aggregations.logs_histogram.buckets.reduce<Array<LoaderOutputFormat>>(
+    resp.aggregations!.logs_histogram.buckets.reduce<Array<LoaderOutputFormat>>(
       (p, c) => {
         p.push(
           ...c.response_code.buckets.map((d) => ({
-            date: c.key_as_string,
+            // Just keep the date from the full ISO string.
+            date: c.key_as_string.split("T")[0],
             count: d.doc_count,
             response_code: d.key,
           })),
@@ -72,7 +69,6 @@ process.stdout.write(
     ),
   ),
 );
-
 ```
 
 The data loader uses a helper file, `es_client.ts`, which provides a wrapper on the `@elastic/elasticsearch` package. This reduces the amount of boilerplate you need to write to issue a query.
@@ -82,7 +78,7 @@ import "dotenv/config";
 import { Client } from "@elastic/elasticsearch";
 
 // Have a look at the "Getting started" guide of the Elasticsearch node.js client
-// to learn how to configure these environment variables:
+// to learn more about how to configure these environment variables:
 // https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/getting-started-js.html
 
 const {
@@ -97,9 +93,12 @@ const {
   ES_API_KEY,
   ES_USERNAME,
   ES_PASSWORD,
+  // the fingerprint (SHA256) of the CA certificate that is used to sign
+  // the certificate that the Elasticsearch node presents for TLS.
+  ES_CA_FINGERPRINT,
   // Warning: This option should be considered an insecure workaround for local development only.
   // You may wish to specify a self-signed certificate rather than disabling certificate verification.
-  // ES_UNSAFE_TLS_REJECT_UNAUTHORIZED can be set to TRUE to disable certificate verification.
+  // ES_UNSAFE_TLS_REJECT_UNAUTHORIZED can be set to FALSE to disable certificate verification.
   // See https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/client-connecting.html#auth-tls for more.
   ES_UNSAFE_TLS_REJECT_UNAUTHORIZED,
 } = process.env;
@@ -116,6 +115,7 @@ const isLocalhost = esUrl?.hostname === "localhost";
 export const esClient = new Client({
   ...(ES_NODE ? { node: ES_NODE } : {}),
   ...(ES_CLOUD_ID ? { cloud: { id: ES_CLOUD_ID } } : {}),
+  ...(ES_CA_FINGERPRINT ? { caFingerprint: ES_CA_FINGERPRINT } : {}),
   ...(ES_API_KEY
     ? {
         auth: {
@@ -133,7 +133,7 @@ export const esClient = new Client({
     : {}),
   ...(isHTTPS &&
   isLocalhost &&
-  ES_UNSAFE_TLS_REJECT_UNAUTHORIZED?.toLowerCase() === "true"
+  ES_UNSAFE_TLS_REJECT_UNAUTHORIZED?.toLowerCase() === "false"
     ? {
         tls: {
           rejectUnauthorized: false,
@@ -144,7 +144,9 @@ export const esClient = new Client({
 ```
 
 <div class="note">
+
 To run this data loader, you’ll need to install `@elastic/elasticsearch`, `d3-dsv` and `dotenv` using your preferred package manager such as npm or Yarn.
+
 </div>
 
 For the data loader to authenticate with your Elasticsearch cluster, you need to set the environment variables defined in the helper. If you use GitHub, you can use [secrets in GitHub Actions](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions) to set environment variables; other platforms provide similar functionality for continuous deployment. For local development, we use the `dotenv` package, which allows environment variables to be defined in a `.env` file which lives in the project root and looks like this:
@@ -154,7 +156,9 @@ ES_NODE="https://USERNAME:PASSWORD@HOST:9200"
 ```
 
 <div class="warning">
+
 The `.env` file should not be committed to your source code repository; keep your credentials secret.
+
 </div>
 
 The above data loader lives in `data/kibana_sample_data_logs.csv.ts`, so we can load the data as `data/kibana_sample_data_logs.csv`. The `FileAttachment.csv` method parses the file and returns a promise to an array of objects.
@@ -169,7 +173,7 @@ The `logs` table has three columns: `date`, `count` and `response_code`. We can 
 Inputs.table(logs)
 ```
 
-Lastly, we can pass the table to `Plot.plot` to make a line chart.
+Lastly, we can pass the table to Observable Plot to make a line chart.
 
 ```js echo
 Plot.plot({
