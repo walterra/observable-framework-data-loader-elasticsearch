@@ -11,6 +11,7 @@
   "dependencies": {
     "@elastic/elasticsearch": "^8.14.0",
     "@observablehq/framework": "^1.9.0",
+    "@types/d3-dsv": "^3.0.7",
     "@types/lodash": "^4.17.5",
     "apache-arrow": "^16.1.0",
     "d3-dsv": "^3.0.1",

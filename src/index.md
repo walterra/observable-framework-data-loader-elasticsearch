@@ -1,111 +1,184 @@
----
-toc: false
----
+# Elasticsearch data loader
 
-<div class="hero">
-  <h1>Observable Framework</h1>
-  <h2>Welcome to your new project! Edit&nbsp;<code style="font-size: 90%;">src/index.md</code> to change this page.</h2>
-  <a href="https://observablehq.com/framework/getting-started">Get started<span style="display: inline-block; margin-left: 0.25rem;">↗︎</span></a>
+Here’s a TypeScript data loader that queries an Elasticsearch cluster.
+
+```ts
+import { csvFormat } from "d3-dsv";
+import { esClient } from "./es_client.js";
+
+interface AggsResponseFormat {
+  logs_histogram: {
+    buckets: Array<{
+      key: number;
+      key_as_string: string;
+      doc_count: number;
+      response_code: {
+        buckets: Array<{ key: string; doc_count: number }>;
+      };
+    }>;
+  };
+}
+
+interface LoaderOutputFormat {
+  date: string;
+  count: number;
+  response_code: string;
+}
+
+const resp = await esClient.search<unknown, AggsResponseFormat>({
+  index: "kibana_sample_data_logs",
+  size: 0,
+  aggs: {
+    logs_histogram: {
+      date_histogram: {
+        field: "@timestamp",
+        calendar_interval: "1d",
+      },
+      aggs: {
+        response_code: {
+          terms: {
+            field: "response.keyword",
+          },
+        },
+      },
+    },
+  },
+});
+
+if (!resp.aggregations) {
+  throw new Error("aggregations not defined");
+}
+
+process.stdout.write(
+  csvFormat(
+    // This transforms the nested response from Elasticsearch into a flat array.
+    resp.aggregations.logs_histogram.buckets.reduce<Array<LoaderOutputFormat>>(
+      (p, c) => {
+        p.push(
+          ...c.response_code.buckets.map((d) => ({
+            date: c.key_as_string,
+            count: d.doc_count,
+            response_code: d.key,
+          })),
+        );
+
+        return p;
+      },
+      [],
+    ),
+  ),
+);
+
+```
+
+The data loader uses a helper file, `es_client.ts`, which provides a wrapper on the `@elastic/elasticsearch` package. This reduces the amount of boilerplate you need to write to issue a query.
+
+```ts
+import "dotenv/config";
+import { Client } from "@elastic/elasticsearch";
+
+// Have a look at the "Getting started" guide of the Elasticsearch node.js client
+// to learn how to configure these environment variables:
+// https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/getting-started-js.html
+
+const {
+  // ES_NODE can include the username and password in the URL, e.g.:
+  // ES_NODE=https://<USERNAME>:<PASSWORD>@<HOST>:9200
+  ES_NODE,
+  // As an alternative to ES_NODE when using Elastic Cloud, you can use ES_CLOUD_ID and
+  // set it to the Cloud ID that you can find in the cloud console of the deployment (https://cloud.elastic.co/).
+  ES_CLOUD_ID,
+  // ES_API_KEY can be used instead of username and password.
+  // The API key will take precedence if both are set.
+  ES_API_KEY,
+  ES_USERNAME,
+  ES_PASSWORD,
+  // Warning: This option should be considered an insecure workaround for local development only.
+  // You may wish to specify a self-signed certificate rather than disabling certificate verification.
+  // ES_UNSAFE_TLS_REJECT_UNAUTHORIZED can be set to TRUE to disable certificate verification.
+  // See https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/client-connecting.html#auth-tls for more.
+  ES_UNSAFE_TLS_REJECT_UNAUTHORIZED,
+} = process.env;
+
+if ((!ES_NODE && !ES_CLOUD_ID) || (ES_NODE && ES_CLOUD_ID))
+  throw new Error(
+    "Either ES_NODE or ES_CLOUD_ID need to be defined, but not both.",
+  );
+
+const esUrl = ES_NODE ? new URL(ES_NODE) : undefined;
+const isHTTPS = esUrl?.protocol === "https:";
+const isLocalhost = esUrl?.hostname === "localhost";
+
+export const esClient = new Client({
+  ...(ES_NODE ? { node: ES_NODE } : {}),
+  ...(ES_CLOUD_ID ? { cloud: { id: ES_CLOUD_ID } } : {}),
+  ...(ES_API_KEY
+    ? {
+        auth: {
+          apiKey: ES_API_KEY,
+        },
+      }
+    : {}),
+  ...(!ES_API_KEY && ES_USERNAME && ES_PASSWORD
+    ? {
+        auth: {
+          username: ES_USERNAME,
+          password: ES_PASSWORD,
+        },
+      }
+    : {}),
+  ...(isHTTPS &&
+  isLocalhost &&
+  ES_UNSAFE_TLS_REJECT_UNAUTHORIZED?.toLowerCase() === "true"
+    ? {
+        tls: {
+          rejectUnauthorized: false,
+        },
+      }
+    : {}),
+});
+```
+
+<div class="note">
+To run this data loader, you’ll need to install `@elastic/elasticsearch`, `d3-dsv` and `dotenv` using your preferred package manager such as npm or Yarn.
 </div>
 
-<div class="grid grid-cols-2" style="grid-auto-rows: 504px;">
-  <div class="card">${
-    resize((width) => Plot.plot({
-      title: "Your awesomeness over time 🚀",
-      subtitle: "Up and to the right!",
-      width,
-      y: {grid: true, label: "Awesomeness"},
-      marks: [
-        Plot.ruleY([0]),
-        Plot.lineY(aapl, {x: "Date", y: "Close", tip: true})
-      ]
-    }))
-  }</div>
-  <div class="card">${
-    resize((width) => Plot.plot({
-      title: "How big are penguins, anyway? 🐧",
-      width,
-      grid: true,
-      x: {label: "Body mass (g)"},
-      y: {label: "Flipper length (mm)"},
-      color: {legend: true},
-      marks: [
-        Plot.linearRegressionY(penguins, {x: "body_mass_g", y: "flipper_length_mm", stroke: "species"}),
-        Plot.dot(penguins, {x: "body_mass_g", y: "flipper_length_mm", stroke: "species", tip: true})
-      ]
-    }))
-  }</div>
+For the data loader to authenticate with your Elasticsearch cluster, you need to set the environment variables defined in the helper. If you use GitHub, you can use [secrets in GitHub Actions](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions) to set environment variables; other platforms provide similar functionality for continuous deployment. For local development, we use the `dotenv` package, which allows environment variables to be defined in a `.env` file which lives in the project root and looks like this:
+
+```
+ES_NODE="https://USERNAME:PASSWORD@HOST:9200"
+```
+
+<div class="warning">
+The `.env` file should not be committed to your source code repository; keep your credentials secret.
 </div>
 
----
+The above data loader lives in `data/kibana_sample_data_logs.csv.ts`, so we can load the data as `data/kibana_sample_data_logs.csv`. The `FileAttachment.csv` method parses the file and returns a promise to an array of objects.
 
-## Next steps
+```js echo
+const logs = FileAttachment("./data/kibana_sample_data_logs.csv").csv({typed: true});
+```
 
-Here are some ideas of things you could try…
+The `logs` table has three columns: `date`, `count` and `response_code`. We can display the table using `Inputs.table`.
 
-<div class="grid grid-cols-4">
-  <div class="card">
-    Chart your own data using <a href="https://observablehq.com/framework/lib/plot"><code>Plot</code></a> and <a href="https://observablehq.com/framework/files"><code>FileAttachment</code></a>. Make it responsive using <a href="https://observablehq.com/framework/display#responsive-display"><code>resize</code></a>.
-  </div>
-  <div class="card">
-    Create a <a href="https://observablehq.com/framework/project-structure">new page</a> by adding a Markdown file (<code>whatever.md</code>) to the <code>src</code> folder.
-  </div>
-  <div class="card">
-    Add a drop-down menu using <a href="https://observablehq.com/framework/inputs/select"><code>Inputs.select</code></a> and use it to filter the data shown in a chart.
-  </div>
-  <div class="card">
-    Write a <a href="https://observablehq.com/framework/loaders">data loader</a> that queries a local database or API, generating a data snapshot on build.
-  </div>
-  <div class="card">
-    Import a <a href="https://observablehq.com/framework/imports">recommended library</a> from npm, such as <a href="https://observablehq.com/framework/lib/leaflet">Leaflet</a>, <a href="https://observablehq.com/framework/lib/dot">GraphViz</a>, <a href="https://observablehq.com/framework/lib/tex">TeX</a>, or <a href="https://observablehq.com/framework/lib/duckdb">DuckDB</a>.
-  </div>
-  <div class="card">
-    Ask for help, or share your work or ideas, on the <a href="https://talk.observablehq.com/">Observable forum</a>.
-  </div>
-  <div class="card">
-    Visit <a href="https://github.com/observablehq/framework">Framework on GitHub</a> and give us a star. Or file an issue if you’ve found a bug!
-  </div>
-</div>
+```js echo
+Inputs.table(logs)
+```
 
-<style>
+Lastly, we can pass the table to `Plot.plot` to make a line chart.
 
-.hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-family: var(--sans-serif);
-  margin: 4rem 0 8rem;
-  text-wrap: balance;
-  text-align: center;
-}
+```js echo
+Plot.plot({
+  style: "overflow: visible;",
+  y: { grid: true },
+  marks: [
+    Plot.ruleY([0]),
+    Plot.line(logs, {x: "date", y: "count", stroke: "response_code", tip: true}),
+    Plot.text(logs, Plot.selectLast({x: "date", y: "count", z: "response_code", text: "response_code", textAnchor: "start", dx: 3}))
+  ]
+})
+```
 
-.hero h1 {
-  margin: 1rem 0;
-  padding: 1rem 0;
-  max-width: none;
-  font-size: 14vw;
-  font-weight: 900;
-  line-height: 1;
-  background: linear-gradient(30deg, var(--theme-foreground-focus), currentColor);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.hero h2 {
-  margin: 0;
-  max-width: 34em;
-  font-size: 20px;
-  font-style: initial;
-  font-weight: 500;
-  line-height: 1.5;
-  color: var(--theme-foreground-muted);
-}
-
-@media (min-width: 640px) {
-  .hero h1 {
-    font-size: 90px;
-  }
-}
-
-</style>
+<small>
+Inspired by the <a href="https://observablehq.observablehq.cloud/framework-example-loader-postgres">PostgreSQL data loader Observable notebook</a>.
+</small>
