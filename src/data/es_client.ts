@@ -2,7 +2,7 @@ import "dotenv/config";
 import { Client } from "@elastic/elasticsearch";
 
 // Have a look at the "Getting started" guide of the Elasticsearch node.js client
-// to learn how to configure these environment variables:
+// to learn more about how to configure these environment variables:
 // https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/getting-started-js.html
 
 const {
