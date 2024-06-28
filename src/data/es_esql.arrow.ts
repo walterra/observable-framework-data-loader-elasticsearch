@@ -5,7 +5,7 @@ async function run() {
   const resp = await esClient.esql.query({
     query: `
     FROM kibana_sample_data_logs
-    | STATS count = COUNT(*), bytes = AVG(bytes) BY url,date = BUCKET(@timestamp, 1 minute)
+    | STATS count = COUNT(*), bytes = AVG(bytes) BY geo.src,response,url,date = BUCKET(@timestamp, 1 day)
     | SORT url,date
     | LIMIT 10000000
     `,
