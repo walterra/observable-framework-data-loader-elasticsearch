@@ -10,7 +10,7 @@ This notebook demonstrates how to use the Elasticsearch data loader with DuckDB-
 ```
 ---
 sql:
-  logs: ./data/es_esql.parqeut
+  logs: ./data/es_esql.parquet
 ---
 ```
 
