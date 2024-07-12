@@ -27,7 +27,7 @@ async function run() {
 
   // Output the Apache Arrow table as a Parquet table to standard out.
   const parquetTable = Parquet.Table.fromIPCStream(
-    Arrow.tableToIPC(table, "stream"),
+    Arrow.tableToIPC(table, "stream")
   );
   const parquetBuilder = new Parquet.WriterPropertiesBuilder()
     .setCompression(Parquet.Compression.ZSTD)
