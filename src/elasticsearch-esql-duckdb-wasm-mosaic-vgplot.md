@@ -65,7 +65,6 @@ vg.vconcat(
     }),
     vg.intervalX({ as: $filter }),
     // vg.xTickFormat("s"),
-    // why not working?
     vg.xDomain(vg.Fixed),
     vg.xScale("utc"),
     vg.xLabel("date"),
